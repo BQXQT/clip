@@ -1,55 +1,125 @@
 name: build
+
 on: [push, pull_request]
+
 jobs:
-  build:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
-        enable_image: [on, off]
-    steps:
-    - uses: actions/checkout@v4
-    - uses: ilammy/msvc-dev-cmd@v1
-      if: runner.os == 'Windows'
-    - name: Generating Makefiles
-      shell: bash
-      run: |
-        if [[ "${{ runner.os }}" == "Windows" ]] ; then
-          cmake . -G "NMake Makefiles" \
-                  -DCLIP_ENABLE_IMAGE=${{ matrix.enable_image }}
-        else
-          cmake . -G "Unix Makefiles" \
-                  -DCLIP_ENABLE_IMAGE=${{ matrix.enable_image }}
-        fi
-    - name: Compiling
-      shell: bash
-      run: cmake --build .
-    - name: Running Tests
-      shell: bash
-      run: |
-        if [[ "${{ runner.os }}" == "Linux" ]] ; then
-          export XVFB=xvfb-run
-        fi
-        $XVFB ctest --output-on-failure
-  mingw:
-    runs-on: windows-latest
-    strategy:
-      matrix:
-        sys: [ mingw64, mingw32, ucrt64, clang64 ]
-    defaults:
-      run:
-        shell: msys2 {0}
-    steps:
-    - uses: msys2/setup-msys2@v2
-      with:
-        release: false
-        msystem: ${{matrix.sys}}
-        pacboy: cc:p cmake:p ninja:p
-    - uses: actions/checkout@v4
-    - name: Generating Makefiles
-      run: cmake .
-    - name: Compiling
-      run: cmake --build .
-    - name: Test
-      run: ctest --output-on-failure
+
+  build:
+
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+
+      fail-fast: false
+
+      matrix:
+
+        os: [windows-latest]
+
+        build_type: [Release]
+
+        enable_ui: [on]
+
+        include:
+
+          - os: windows-latest
+
+            build_type: Release
+
+            enable_ui: on
+
+    steps:
+
+    - uses: actions/checkout@v3
+
+      with:
+
+        submodules: 'recursive'
+
+    - name: ccache
+
+      uses: hendrikmuhs/ccache-action@v1
+
+      if: runner.os == 'Linux'
+
+      with:
+
+        key: ${{ matrix.os }}-${{ matrix.enable_ui }}
+
+    - uses: seanmiddleditch/gha-setup-ninja@master
+
+    - uses: ilammy/msvc-dev-cmd@v1
+
+      if: runner.os == 'Windows'
+
+    - name: Install Dependencies
+
+      shell: bash
+
+      run: |
+
+        if [[ "${{ runner.os }}" == "Linux" ]] ; then
+
+          sudo apt-get update -qq
+
+          sudo apt-get install -y \
+
+            libx11-dev libxcursor-dev libxi-dev
+
+        fi
+
+    - name: Generating Makefiles
+
+      shell: bash
+
+      run: |
+
+        if [[ "${{ runner.os }}" == "Windows" ]] ; then
+
+          export enable_ccache=off
+
+        else
+
+          export enable_ccache=on
+
+        fi
+
+        curl -L https://github.com/blueloveTH/aseprite/releases/download/v0.01/skia.zip --output skia.zip
+
+        7z x skia.zip
+
+        cmake -S . -B build -G Ninja \
+
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+
+          -DENABLE_UI=${{ matrix.enable_ui }} \
+
+          -DENABLE_CCACHE=$enable_ccache \
+
+          -DLAF_BACKEND=skia \
+
+          -DSKIA_DIR=./skia \
+
+          -DSKIA_LIBRARY_DIR=./skia/out/Release-x64 \
+
+          -DSKIA_LIBRARY=./skia/out/Release-x64/skia.lib
+
+    - name: Compiling
+
+      shell: bash
+
+      run: |
+
+        cd build && ninja
+
+    - uses: actions/upload-artifact@v3
+
+      with:
+
+        name: aseprite
+
+        path: |
+
+          D:/a/aseprite/aseprite/build/bin/data
+
+          D:/a/aseprite/aseprite/build/bin/aseprite.exe 
